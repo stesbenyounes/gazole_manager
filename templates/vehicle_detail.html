@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3 class="mb-3">
+  Fiche véhicule — {{ v.name }}{% if v.plate %} <small class="text-muted">({{ v.plate }})</small>{% endif %}
+  <a class="btn btn-sm btn-outline-secondary ms-2" href="{{ url_for('entries_list') }}?vehicle={{ v.id }}">Voir ses enregistrements</a>
+  <a class="btn btn-sm btn-outline-primary ms-2" href="{{ url_for('entries_list', vehicle=v.id, export=1) }}">Exporter CSV</a>
+</h3>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="card shadow-sm"><div class="card-body">
+    <div class="text-muted">Total litres</div>
+    <div class="h4">{{ '%.2f'|format(total_liters) }}</div>
+  </div></div></div>
+  <div class="col-md-3"><div class="card shadow-sm"><div class="card-body">
+    <div class="text-muted">Coût total (TND)</div>
+    <div class="h4">{{ '%.3f'|format(total_cost) }}</div>
+  </div></div></div>
+  <div class="col-md-3"><div class="card shadow-sm"><div class="card-body">
+    <div class="text-muted">Moyenne L/100</div>
+    <div class="h4">{{ '%.2f'|format(avg_l_100) }}</div>
+  </div></div></div>
+  <div class="col-md-3 d-flex align-items-center">
+    <a class="btn btn-outline-secondary" href="{{ url_for('vehicles_list') }}">← Véhicules</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h5 class="card-title">Séries mensuelles</h5>
+
+    {% if labels and (labels|length) > 0 %}
+      <canvas id="chartLiters" height="100"></canvas>
+      <div class="mt-3"></div>
+      <canvas id="chartCost" height="100"></canvas>
+    {% else %}
+      <div class="text-muted">Pas encore de données mensuelles pour ce véhicule.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h5 class="card-title">Dernières entrées</h5>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th><th>Chauffeur</th><th>Km</th><th>Litres</th><th>Type</th><th>Prix/L</th><th>Total</th><th>L/100</th><th>Station</th><th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in last_entries %}
+            <tr>
+              <td>
+                {% if e.date %}
+                  {% set y = e.date.year %}{% set m = "%02d"|format(e.date.month) %}
+                  <a href="{{ url_for('entries_list') }}?vehicle={{ v.id }}&month={{ y }}-{{ m }}">{{ e.date }}</a>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                {% if e.driver %}<a href="{{ url_for('driver_detail', did=e.driver.id) }}">{{ e.driver.name }}</a>{% else %}—{% endif %}
+              </td>
+              <td>{{ '%.0f'|format(e.odometer_km) if e.odometer_km is not none else '' }}</td>
+              <td>{{ '%.2f'|format(e.liters) if e.liters is not none else '' }}</td>
+              <td>{{ e.fuel_type.name if e.fuel_type else '—' }}</td>
+              <td>{{ '%.3f'|format(e.price_unit) if e.price_unit is not none else '' }}</td>
+              <td>{{ '%.3f'|format(e.total_cost) if e.total_cost is not none else '' }}</td>
+              <td>
+                {% set c = consos.get(e.id) %}{{ '%.2f'|format(c) if c is not none else '—' }}
+              </td>
+              <td>{{ e.station or '' }}</td>
+              <td class="text-muted">{{ e.notes or '' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="10" class="text-muted">Aucune entrée.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const labels = {{ labels|tojson }};
+const liters = {{ liters_month|tojson }};
+const cost   = {{ cost_month|tojson }};
+
+function money(v){ return new Intl.NumberFormat('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v)+' TND'; }
+function litersFmt(v){ return new Intl.NumberFormat('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v)+' L'; }
+
+const commonOpts = {
+  responsive:true, maintainAspectRatio:false,
+  interaction:{mode:'index', intersect:false},
+  plugins:{
+    tooltip:{ callbacks:{
+      label: ctx => {
+        const val = ctx.parsed.y ?? 0;
+        return (ctx.dataset.label?.includes('Coût')) ? money(val) : litersFmt(val);
+      }
+    } }
+  },
+  scales:{ y:{ beginAtZero:true } }
+};
+
+if (labels.length){
+  new Chart(document.getElementById('chartLiters').getContext('2d'), {
+    type:'line',
+    data:{ labels, datasets:[{ label:'Litres', data:liters, fill:false }] },
+    options: commonOpts
+  });
+  new Chart(document.getElementById('chartCost').getContext('2d'), {
+    type:'line',
+    data:{ labels, datasets:[{ label:'Coût (TND)', data:cost, fill:false }] },
+    options: commonOpts
+  });
+}
+</script>
+{% endblock %}

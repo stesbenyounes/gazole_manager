@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h3>{{ 'Modifier véhicule' if vehicle else 'Nouveau véhicule' }}</h3>
+
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">Nom</label>
+    <input class="form-control" name="name" required
+           value="{{ vehicle.name if vehicle else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Immatriculation</label>
+    <input class="form-control" name="plate"
+           value="{{ vehicle.plate if vehicle else '' }}">
+  </div>
+
+  <div class="d-flex gap-2">
+    <button class="btn btn-primary" type="submit">
+      {{ 'Enregistrer' if vehicle else 'Ajouter' }}
+    </button>
+    <a class="btn btn-secondary" href="{{ url_for('vehicles_list') }}">Annuler</a>
+
+    {% if vehicle %}
+      <form method="post" action="{{ url_for('vehicle_delete', vid=vehicle.id) }}" onsubmit="return confirm('Supprimer ce véhicule ?');">
+        <button class="btn btn-outline-danger" type="submit">Supprimer</button>
+      </form>
+    {% endif %}
+  </div>
+</form>
+
+{% endblock %}

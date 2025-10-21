@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nouvelle Entrée</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 30px;
+            color: #333;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-group.full {
+            grid-column: 1 / -1;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-start;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background-color: #0066cc;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #0052a3;
+        }
+
+        .btn-secondary {
+            background-color: #f0f0f0;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background-color: #e0e0e0;
+        }
+
+        input[type="hidden"] {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Nouvelle Entrée</h1>
+
+        <form method="POST">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="date">Date</label>
+                    <input type="date" id="date" name="date" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="vehicle_id">Véhicule</label>
+                    <select id="vehicle_id" name="vehicle_id">
+                        <option value="">-- Sélectionner --</option>
+                        {% for v in vehicles %}
+                            <option value="{{ v.id }}">{{ v.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="driver_id">Chauffeur</label>
+                    <select id="driver_id" name="driver_id">
+                        <option value="">-- Sélectionner --</option>
+                        {% for d in drivers %}
+                            <option value="{{ d.id }}">{{ d.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="odometer_km">Compteur (km)</label>
+                    <input type="number" id="odometer_km" name="odometer_km" step="0.01">
+                </div>
+
+                <div class="form-group">
+                    <label for="fuel_type_id">Type carburant</label>
+                    <select id="fuel_type_id" name="fuel_type_id">
+                        <option value="">-- Sélectionner --</option>
+                        {% for ft in fuel_types %}
+                            <option value="{{ ft.id }}" data-price="{{ ft.price }}">{{ ft.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="price_unit">Prix/L (TND)</label>
+                    <input type="number" id="price_unit" name="price_unit" step="0.001" placeholder="(auto si vide)" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="total_cost">Montant Total (TND)</label>
+                    <input type="number" id="total_cost" name="total_cost" step="0.001" placeholder="Entrez le montant payé">
+                </div>
+
+                <div class="form-group">
+                    <label for="liters">Litres (calculé auto)</label>
+                    <input type="number" id="liters" name="liters" step="0.01" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="station">Station</label>
+                    <input type="text" id="station" name="station">
+                </div>
+
+                <div class="form-group full">
+                    <label for="notes">Notes</label>
+                    <textarea id="notes" name="notes"></textarea>
+                </div>
+            </div>
+
+            <!-- Champs cachés pour filtres de retour -->
+            <input type="hidden" name="ret_vehicle" value="{{ ret_vehicle or '' }}">
+            <input type="hidden" name="ret_driver" value="{{ ret_driver or '' }}">
+            <input type="hidden" name="ret_month" value="{{ ret_month or '' }}">
+
+            <div class="buttons">
+                <button type="submit" class="btn-primary">Enregistrer</button>
+                <button type="button" class="btn-secondary" onclick="history.back()">Annuler</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Remplir la date avec la date du jour
+            const dateInput = document.getElementById('date');
+            if (!dateInput.value) {
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                dateInput.value = `${year}-${month}-${day}`;
+            }
+
+            // Remplir le prix quand on change le type de carburant
+            document.getElementById('fuel_type_id').addEventListener('change', function() {
+                const selectedOption = this.options[this.selectedIndex];
+                const price = selectedOption.getAttribute('data-price');
+                const priceInput = document.getElementById('price_unit');
+                
+                if (price) {
+                    priceInput.value = price;
+                    calculateLiters(); // Recalculer les litres
+                } else {
+                    priceInput.value = '';
+                }
+            });
+
+            // Calculer automatiquement les litres quand on entre le montant
+            document.getElementById('total_cost').addEventListener('input', calculateLiters);
+
+            function calculateLiters() {
+                const totalCost = parseFloat(document.getElementById('total_cost').value);
+                const pricePerLiter = parseFloat(document.getElementById('price_unit').value);
+                const litersInput = document.getElementById('liters');
+
+                if (totalCost && pricePerLiter && pricePerLiter > 0) {
+                    const liters = (totalCost / pricePerLiter).toFixed(2);
+                    litersInput.value = liters;
+                } else {
+                    litersInput.value = '';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
