@@ -20,8 +20,13 @@ app = Flask(__name__, instance_relative_config=True)
 Path(app.instance_path).mkdir(parents=True, exist_ok=True)
 
 # Config BDD (fichier dans instance/)
+# Utilise PostgreSQL si disponible, sinon SQLite en local
+DATABASE_URL = os.environ.get('DATABASE_URL', f"sqlite:///{Path(app.instance_path) / 'gazole.db'}")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 app.config.update(
-    SQLALCHEMY_DATABASE_URI=f"sqlite:///{Path(app.instance_path) / 'gazole.db'}",
+    SQLALCHEMY_DATABASE_URI=DATABASE_URL,
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     TEMPLATES_AUTO_RELOAD=True,
     PROPAGATE_EXCEPTIONS=True,
