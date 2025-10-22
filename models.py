@@ -33,7 +33,7 @@ class FuelEntry(db.Model):
 
     date = db.Column(db.Date, nullable=False)
 
-    vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicle.id'), nullable=False)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicle.id'), nullable=True)
     driver_id  = db.Column(db.Integer, db.ForeignKey('driver.id'))
 
     odometer_km = db.Column(db.Float)
