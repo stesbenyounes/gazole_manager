@@ -695,49 +695,73 @@ def import_csv():
     if request.method == 'POST':
         f = request.files.get('file')
         if not f:
-            return "Aucun fichier sélectionné", 400
+            flash("Aucun fichier sélectionné", "danger")
+            return redirect(url_for('import_csv'))
 
-        reader = csv.DictReader(TextIOWrapper(f.stream, encoding='utf-8'))
-        for row in reader:
-            date_str = (row.get('date') or '').strip()
-            if not date_str:
-                dt = datetime.today().date()
-            else:
-                try:
-                    dt = datetime.strptime(date_str, '%Y-%m-%d').date()
-                except ValueError:
+        try:
+            reader = csv.DictReader(TextIOWrapper(f.stream, encoding='utf-8'))
+            imported = 0
+            
+            for row in reader:
+                date_str = (row.get('date') or '').strip()
+                if not date_str:
                     dt = datetime.today().date()
+                else:
+                    try:
+                        dt = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        continue  # Skip ligne invalide
 
-            vehicle_name = (row.get('vehicle') or '').strip()
-            driver_name  = (row.get('driver') or '').strip()
-            v = Vehicle.query.filter_by(name=vehicle_name).first() if vehicle_name else None
-            d = Driver.query.filter_by(name=driver_name).first() if driver_name else None
+                # Véhicule : crée s'il n'existe pas
+                vehicle_name = (row.get('vehicle') or '').strip()
+                if vehicle_name:
+                    v = Vehicle.query.filter_by(name=vehicle_name).first()
+                    if not v:
+                        v = Vehicle(name=vehicle_name)
+                        db.session.add(v)
+                        db.session.flush()
+                else:
+                    v = None
 
-            odometer_km = float(row['odometer_km']) if (row.get('odometer_km') or '').strip() else None
-            liters      = float(row['liters'])       if (row.get('liters')       or '').strip() else None
-            price_unit  = float(row['price_unit'])   if (row.get('price_unit')   or '').strip() else None
-            station     = (row.get('station') or '').strip()
-            notes       = (row.get('notes') or '').strip()
+                # Chauffeur : crée s'il n'existe pas
+                driver_name = (row.get('driver') or '').strip()
+                if driver_name:
+                    d = Driver.query.filter_by(name=driver_name).first()
+                    if not d:
+                        d = Driver(name=driver_name)
+                        db.session.add(d)
+                        db.session.flush()
+                else:
+                    d = None
 
-            fuel_type_name = (row.get('fuel_type') or '').strip()
-            ft = FuelType.query.filter_by(name=fuel_type_name).first() if fuel_type_name else None
+                odometer_km = float(row['odometer_km']) if (row.get('odometer_km') or '').strip() else None
+                liters = float(row['liters']) if (row.get('liters') or '').strip() else None
+                price_unit = float(row['price_unit']) if (row.get('price_unit') or '').strip() else None
+                station = (row.get('station') or '').strip()
+                notes = (row.get('notes') or '').strip()
 
-            e = FuelEntry(
-                date=dt,
-                vehicle_id=v.id if v else None,
-                driver_id=d.id if d else None,
-                odometer_km=odometer_km,
-                liters=liters,
-                price_unit=price_unit,
-                station=station,
-                notes=notes,
-                fuel_type_id=ft.id if ft else None
-            )
-            e.compute_total()
-            db.session.add(e)
+                e = FuelEntry(
+                    date=dt,
+                    vehicle_id=v.id if v else None,
+                    driver_id=d.id if d else None,
+                    odometer_km=odometer_km,
+                    liters=liters,
+                    price_unit=price_unit,
+                    station=station,
+                    notes=notes,
+                )
+                e.compute_total()
+                db.session.add(e)
+                imported += 1
 
-        db.session.commit()
-        return redirect(url_for('entries_list'))
+            db.session.commit()
+            flash(f"{imported} entrées importées avec succès!", "success")
+            return redirect(url_for('entries_list'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Erreur lors de l'import : {str(e)}", "danger")
+            return redirect(url_for('import_csv'))
 
     return render_template('import_form.html')
 
@@ -784,5 +808,5 @@ def health():
 # Main
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5001))
     app.run(host='0.0.0.0', port=port)
