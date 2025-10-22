@@ -125,7 +125,7 @@ def per_entry_consumption(entries):
 def month_series_for(query):
     rows = (
         query.with_entities(
-            func.strftime('%Y-%m', FuelEntry.date).label('ym'),
+            func.to_char(FuelEntry.date, 'YYYY-MM').label('ym'),
             func.sum(FuelEntry.liters).label('liters'),
             func.sum(FuelEntry.total_cost).label('cost'),
         )
@@ -196,15 +196,15 @@ def dashboard():
     totals = {"cost": round(total_cost, 2), "liters": round(total_liters, 2)}
 
     monthly = (
-        db.session.query(
-            func.strftime('%Y-%m', FuelEntry.date).label('ym'),
-            func.sum(FuelEntry.liters).label('liters'),
-            func.sum(FuelEntry.total_cost).label('cost'),
-        )
-        .group_by('ym')
-        .order_by('ym')
-        .all()
+    db.session.query(
+        func.to_char(FuelEntry.date, 'YYYY-MM').label('ym'),
+        func.sum(FuelEntry.liters).label('liters'),
+        func.sum(FuelEntry.total_cost).label('cost'),
     )
+    .group_by('ym')
+    .order_by('ym')
+    .all()
+)
     labels_month = [row.ym or "—" for row in monthly]
     liters_month = [float(row.liters or 0) for row in monthly]
     cost_month   = [float(row.cost   or 0) for row in monthly]
