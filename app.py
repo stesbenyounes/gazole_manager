@@ -78,12 +78,25 @@ def logout():
 # Helpers
 # -----------------------------------------------------------------------------
 def ensure_column_exists(table: str, column: str, column_sql: str):
-    """Ajoute la colonne si absente (SQLite: ALTER TABLE ... ADD COLUMN)."""
-    info = db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
-    cols = {row[1] for row in info}
-    if column not in cols:
-        db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {column_sql}"))
-        db.session.commit()
+    """Ajoute la colonne si absente (compatible SQLite et PostgreSQL)."""
+    # Vérifie si on utilise PostgreSQL ou SQLite
+    engine = db.engine
+    if engine.dialect.name == 'postgresql':
+        # PostgreSQL
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        columns = [col['name'] for col in inspector.get_columns(table)]
+        if column not in columns:
+            # PostgreSQL supporte ADD COLUMN IF NOT EXISTS depuis version 9.6
+            db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {column_sql}"))
+            db.session.commit()
+    else:
+        # SQLite
+        info = db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        cols = {row[1] for row in info}
+        if column not in cols:
+            db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {column_sql}"))
+            db.session.commit()
 
 def ensure_fuel_types():
     defaults = [("Gazole", 1.985), ("Gazole 50", 2.205), ("Essence", 2.525)]
