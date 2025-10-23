@@ -186,6 +186,18 @@
             </div>
 
             <div class="filter-group">
+                <label for="vehicle_id">Véhicule</label>
+                <select id="vehicle_id" name="vehicle_id">
+                    <option value="">Tous les véhicules</option>
+                    {% for v in vehicles %}
+                        <option value="{{ v.id }}" {% if vehicle_id == v.id %}selected{% endif %}>
+                            {{ v.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-group">
                 <label for="date_start">Date début</label>
                 <input type="date" id="date_start" name="date_start" value="{{ date_start or '' }}">
             </div>
@@ -197,7 +209,8 @@
 
             <div class="filter-buttons">
                 <button type="submit" class="btn btn-primary">Filtrer</button>
-                <button type="button" class="btn btn-secondary" onclick="window.location.href='{{ url_for('driver_reports') }}'">Réinitialiser</button>            </div>
+                <button type="button" class="btn btn-secondary" onclick="window.location.href='{{ url_for('driver_reports') }}'">Réinitialiser</button>
+            </div>
         </form>
 
         <!-- Cartes résumé -->
@@ -257,7 +270,7 @@
 
         <!-- Bouton Export -->
         <div class="export-btn">
-            <a href="{{ url_for('driver_reports', driver_id=driver_id, date_start=date_start, date_end=date_end, export=1) }}" class="btn btn-secondary">
+            <a href="{{ url_for('driver_reports', driver_id=driver_id, vehicle_id=vehicle_id, date_start=date_start, date_end=date_end, export=1) }}" class="btn btn-secondary">
                 📥 Exporter CSV
             </a>
         </div>

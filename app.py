@@ -597,24 +597,23 @@ def driver_delete(did):
 @login_required
 def driver_reports():
     from models import Driver, FuelEntry, Vehicle
-    
     driver_id = request.args.get('driver_id', type=int)
+    vehicle_id = request.args.get('vehicle_id', type=int)
     date_start = request.args.get('date_start', type=str)
     date_end = request.args.get('date_end', type=str)
     export = request.args.get('export', type=int)
     
     query = FuelEntry.query
-    
     if driver_id:
         query = query.filter(FuelEntry.driver_id == driver_id)
-    
+    if vehicle_id:
+        query = query.filter(FuelEntry.vehicle_id == vehicle_id)
     if date_start:
         try:
             start_date = datetime.strptime(date_start, '%Y-%m-%d').date()
             query = query.filter(FuelEntry.date >= start_date)
         except ValueError:
             pass
-    
     if date_end:
         try:
             end_date = datetime.strptime(date_end, '%Y-%m-%d').date()
@@ -623,14 +622,12 @@ def driver_reports():
             pass
     
     report_data = query.order_by(FuelEntry.date.desc()).all()
-    
     total_liters = round(sum((e.liters or 0) for e in report_data), 2)
     total_cost = round(sum((e.total_cost or 0) for e in report_data), 3)
     
     distances = {}
     total_km = 0
     entries_by_vehicle = {}
-    
     for e in sorted(report_data, key=lambda x: (x.vehicle_id, x.date)):
         vid = e.vehicle_id
         if vid not in entries_by_vehicle:
@@ -647,7 +644,6 @@ def driver_reports():
                 total_km += distance
     
     total_km = round(total_km, 0)
-    
     consos = per_entry_consumption(query.order_by(FuelEntry.date.asc()).all())
     consos_list = [consos.get(e.id) for e in report_data if consos.get(e.id) is not None]
     avg_consumption = round(sum(consos_list) / len(consos_list), 2) if consos_list else 0.0
@@ -669,14 +665,17 @@ def driver_reports():
                 e.station or '',
             ])
         return Response(si.getvalue(), mimetype='text/csv',
-                       headers={'Content-Disposition': 'attachment; filename=rapport_chauffeurs.csv'})
+            headers={'Content-Disposition': 'attachment; filename=rapport_chauffeurs.csv'})
     
     drivers = Driver.query.order_by(Driver.name.asc()).all()
+    vehicles = Vehicle.query.order_by(Vehicle.name.asc()).all()
     
     return render_template(
         'driver_reports.html',
         drivers=drivers,
+        vehicles=vehicles,
         driver_id=driver_id,
+        vehicle_id=vehicle_id,
         date_start=date_start,
         date_end=date_end,
         report_data=report_data,
@@ -687,7 +686,103 @@ def driver_reports():
         consos=consos,
         distances=distances
     )
-
+@app.route('/vehicle-reports') 
+def vehicle_reports():
+    from models import Vehicle, FuelEntry, Driver
+    
+    vehicle_id = request.args.get('vehicle_id', type=int)
+    date_start = request.args.get('date_start', type=str)
+    date_end = request.args.get('date_end', type=str)
+    export = request.args.get('export', type=int)
+    
+    query = FuelEntry.query
+    
+    if vehicle_id:
+        query = query.filter(FuelEntry.vehicle_id == vehicle_id)
+    
+    if date_start:
+        try:
+            start_date = datetime.strptime(date_start, '%Y-%m-%d').date()
+            query = query.filter(FuelEntry.date >= start_date)
+        except ValueError:
+            pass
+    
+    if date_end:
+        try:
+            end_date = datetime.strptime(date_end, '%Y-%m-%d').date()
+            query = query.filter(FuelEntry.date <= end_date)
+        except ValueError:
+            pass
+    
+    report_data = query.order_by(FuelEntry.date.desc()).all()
+    
+    # Calculs des totaux
+    total_liters = round(sum((e.liters or 0) for e in report_data), 2)
+    total_cost = round(sum((e.total_cost or 0) for e in report_data), 3)
+    
+    # Calcul des distances par véhicule
+    distances = {}
+    total_km = 0
+    entries_by_vehicle = {}
+    
+    for e in sorted(report_data, key=lambda x: (x.vehicle_id, x.date)):
+        vid = e.vehicle_id
+        if vid not in entries_by_vehicle:
+            entries_by_vehicle[vid] = []
+        entries_by_vehicle[vid].append(e)
+    
+    for vid, entries in entries_by_vehicle.items():
+        for i in range(1, len(entries)):
+            prev_odo = entries[i-1].odometer_km
+            curr_odo = entries[i].odometer_km
+            if prev_odo and curr_odo and curr_odo > prev_odo:
+                distance = curr_odo - prev_odo
+                distances[entries[i].id] = round(distance, 0)
+                total_km += distance
+    
+    total_km = round(total_km, 0)
+    
+    # Calcul de la consommation
+    consos = per_entry_consumption(query.order_by(FuelEntry.date.asc()).all())
+    consos_list = [consos.get(e.id) for e in report_data if consos.get(e.id) is not None]
+    avg_consumption = round(sum(consos_list) / len(consos_list), 2) if consos_list else 0.0
+    
+    # Export CSV
+    if export == 1:
+        si = StringIO()
+        w = csv.writer(si)
+        w.writerow(['vehicule', 'date', 'chauffeur', 'odometre_km', 'distance_km', 'litres', 'cout_total', 'consommation_l100km', 'station'])
+        for e in report_data:
+            w.writerow([
+                e.vehicle.name if e.vehicle else '',
+                e.date.isoformat() if e.date else '',
+                e.driver.name if e.driver else '',
+                e.odometer_km or '',
+                distances.get(e.id, ''),
+                e.liters or '',
+                e.total_cost or '',
+                consos.get(e.id, ''),
+                e.station or '',
+            ])
+        return Response(si.getvalue(), mimetype='text/csv',
+                       headers={'Content-Disposition': 'attachment; filename=rapport_vehicules.csv'})
+    
+    vehicles = Vehicle.query.order_by(Vehicle.name.asc()).all()
+    
+    return render_template(
+        'vehicle_reports.html',
+        vehicles=vehicles,
+        vehicle_id=vehicle_id,
+        date_start=date_start,
+        date_end=date_end,
+        report_data=report_data,
+        total_liters=total_liters,
+        total_cost=total_cost,
+        total_km=total_km,
+        avg_consumption=avg_consumption,
+        consos=consos,
+        distances=distances
+    )
 @app.route('/import-csv', methods=['GET', 'POST'])
 @login_required
 def import_csv():

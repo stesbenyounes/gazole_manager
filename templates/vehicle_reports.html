@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+    <h1>Rapports par Vehicule</h1>
+    
+    <form method="GET" class="mb-4">
+        <div class="row">
+            <div class="col-md-3">
+                <label>Vehicule</label>
+                <select name="vehicle_id" class="form-control">
+                    <option value="">Tous</option>
+                    {% for v in vehicles %}
+                    <option value="{{ v.id }}">{{ v.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>Date debut</label>
+                <input type="date" name="date_start" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <label>Date fin</label>
+                <input type="date" name="date_end" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary w-100">Filtrer</button>
+            </div>
+        </div>
+    </form>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-white bg-primary">
+                <div class="card-body">
+                    <h5>Total Litres</h5>
+                    <p class="card-text">{{ total_liters }} L</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-danger">
+                <div class="card-body">
+                    <h5>Cout Total</h5>
+                    <p class="card-text">{{ total_cost }} TND</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-warning">
+                <div class="card-body">
+                    <h5>Distance</h5>
+                    <p class="card-text">{{ total_km }} km</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-info">
+                <div class="card-body">
+                    <h5>Consommation</h5>
+                    <p class="card-text">{{ avg_consumption }} L/100km</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>Details</h2>
+    {% if report_data %}
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Vehicule</th>
+                <th>Date</th>
+                <th>Chauffeur</th>
+                <th>Odometre</th>
+                <th>Distance</th>
+                <th>Litres</th>
+                <th>Cout</th>
+                <th>Station</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in report_data %}
+            <tr>
+                <td>{{ entry.vehicle.name if entry.vehicle else "-" }}</td>
+                <td>{{ entry.date.strftime("%d/%m/%Y") if entry.date else "-" }}</td>
+                <td>{{ entry.driver.name if entry.driver else "-" }}</td>
+                <td>{{ entry.odometer_km|round(0) if entry.odometer_km else "-" }}</td>
+                <td>{{ distances.get(entry.id, "-") }}</td>
+                <td>{{ entry.liters|round(2) if entry.liters else "-" }}</td>
+                <td>{{ entry.total_cost|round(3) if entry.total_cost else "-" }}</td>
+                <td>{{ entry.station or "-" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <a href="{{ url_for('vehicle_reports', vehicle_id=vehicle_id, date_start=date_start, date_end=date_end, export=1) }}" class="btn btn-secondary">Exporter CSV</a>
+    {% else %}
+    <p>Aucune donnee</p>
+    {% endif %}
+</div>
+{% endblock %}
