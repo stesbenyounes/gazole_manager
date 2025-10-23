@@ -299,22 +299,57 @@ def dashboard():
             })
     
     top_drivers = sorted(top_drivers, key=lambda x: x['total_km'], reverse=True)[:5]
+    
+    # Top 5 chauffeurs du mois en cours
+    current_month_start = date(date.today().year, date.today().month, 1)
+    current_month_entries = FuelEntry.query.filter(FuelEntry.date >= current_month_start).all()
 
-    return render_template(
-        'dashboard.html',
+    driver_stats = {}
+    entries_by_driver = {}
+
+    for e in sorted(current_month_entries, key=lambda x: (x.driver_id, x.date)):
+        did = e.driver_id
+        if did not in entries_by_driver:
+            entries_by_driver[did] = []
+        entries_by_driver[did].append(e)
+
+    for did, entries in entries_by_driver.items():
+        total_km = 0
+        total_cost = 0
+        consos_list = []
+        
+        for i in range(1, len(entries)):
+            prev_odo = entries[i-1].odometer_km
+            curr_odo = entries[i].odometer_km
+            if prev_odo and curr_odo and curr_odo > prev_odo:
+                distance = curr_odo - prev_odo
+                total_km += distance
+                if entries[i].liters:
+                    conso = (entries[i].liters / distance) * 100
+                    consos_list.append(conso)
+            total_cost += entries[i].total_cost or 0
+        
+        avg_conso = sum(consos_list) / len(consos_list) if consos_list else 0
+        driver = Driver.query.get(did)
+        
+        if driver:
+            driver_stats[did] = {
+                'name': driver.name,
+                'km': total_km,
+                'consumption': avg_conso,
+                'cost': total_cost
+            }
+
+    top_drivers = sorted(driver_stats.items(), key=lambda x: x[1]['km'], reverse=True)[:5]
+    top_drivers = [(i+1, data) for i, (_, data) in enumerate(top_drivers)]
+    return render_template('dashboard.html',
         total_vehicles=total_vehicles,
         total_drivers=total_drivers,
         total_entries=total_entries,
         totals=totals,
-        labels_month=labels_month,
-        liters_month=liters_month,
-        cost_month=cost_month,
-        fuel_labels=fuel_labels,
-        fuel_liters=fuel_liters,
         last_entries=last_entries,
         avg_l_per_100=avg_l_per_100,
         top_drivers=top_drivers,
-        period=period_value
     )
 
 @app.route('/entries')
