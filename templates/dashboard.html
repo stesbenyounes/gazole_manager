@@ -1,177 +1,40 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Gazole Manager{% endblock %}
+
 {% block content %}
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-  <h3>Tableau de bord</h3>
-  <a href="{{ url_for('driver_reports') }}" class="btn" style="background:#0066cc;color:white;text-decoration:none;padding:10px 20px;border-radius:6px;font-weight:600">
-    📊 Rapports Chauffeurs
-  </a>
+<div class="page-header">
+    <h1>📈 Dashboard</h1>
+    <p>Vue d'ensemble de votre flotte et consommation</p>
 </div>
 
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
-  <div style="padding:12px;border:1px solid #eee;border-radius:8px;min-width:200px">
-    <div class="text-muted">Véhicules</div>
-    <div style="font-size:1.6rem;font-weight:600">{{ total_vehicles }}</div>
-  </div>
-  <div style="padding:12px;border:1px solid #eee;border-radius:8px;min-width:200px">
-    <div class="text-muted">Chauffeurs</div>
-    <div style="font-size:1.6rem;font-weight:600">{{ total_drivers }}</div>
-  </div>
-  <div style="padding:12px;border:1px solid #eee;border-radius:8px;min-width:200px">
-    <div class="text-muted">Enregistrements</div>
-    <div style="font-size:1.6rem;font-weight:600">{{ total_entries }}</div>
-  </div>
-  <div style="padding:12px;border:1px solid #eee;border-radius:8px;min-width:200px">
-    <div class="text-muted">Total litres</div>
-    <div style="font-size:1.6rem;font-weight:600">{{ (totals.liters|default(0))|round(2) }}</div>
-  </div>
-  <div style="padding:12px;border:1px solid #eee;border-radius:8px;min-width:200px">
-    <div class="text-muted">Coût total</div>
-    <div style="font-size:1.6rem;font-weight:600">{{ (totals.cost|default(0))|round(2) }}</div>
-  </div>
-  <div style="padding:12px;border:1px solid #eee;border-radius:8px;min-width:200px">
-    <div class="text-muted">Conso moyenne (L/100km)</div>
-    <div style="font-size:1.6rem;font-weight:600">{{ avg_l_per_100 }}</div>
-  </div>
-</div>
-
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
-  <div style="border:1px solid #eee;border-radius:8px;padding:12px">
-    <div class="text-muted" style="margin-bottom:6px">Litres & coût par mois</div>
-    <canvas id="monthlyChart" height="130"></canvas>
-  </div>
-  <div style="border:1px solid #eee;border-radius:8px;padding:12px">
-    <div class="text-muted" style="margin-bottom:6px">Répartition par carburant (litres)</div>
-    <canvas id="fuelChart" height="130"></canvas>
-  </div>
-</div>
-
-<!-- Section Top Chauffeurs (30 derniers jours) -->
-<div style="margin-top:18px;border:1px solid #eee;border-radius:8px;padding:16px;background:linear-gradient(135deg, #667eea15 0%, #764ba215 100%)">
-  <!-- Section Top Chauffeurs avec filtre de période -->
-<div style="margin-top:18px;border:1px solid #eee;border-radius:8px;padding:16px;background:linear-gradient(135deg, #667eea15 0%, #764ba215 100%)">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <h4 style="margin:0;color:#333">🏆 Top Chauffeurs</h4>
-    <div style="display:flex;gap:10px;align-items:center">
-      <form method="GET" style="display:flex;gap:10px;align-items:center;margin:0">
-        <label for="period" style="font-size:14px;color:#666">Période:</label>
-        <select id="period" name="period" onchange="this.form.submit()" style="padding:6px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;cursor:pointer">
-          <option value="7" {% if period == 7 %}selected{% endif %}>7 jours</option>
-          <option value="30" {% if period == 30 %}selected{% endif %}>30 jours</option>
-          <option value="90" {% if period == 90 %}selected{% endif %}>90 jours</option>
-          <option value="all" {% if period == 'all' %}selected{% endif %}>Tout le temps</option>
-        </select>
-      </form>
-      <a href="{{ url_for('driver_reports') }}" style="font-size:14px;color:#0066cc;text-decoration:none">Voir détails →</a>
+<!-- Cartes principales -->
+<div class="summary-cards">
+    <div class="card blue">
+        <h3>🚗 Véhicules</h3>
+        <div class="value">{{ total_vehicles }}</div>
     </div>
-  </div>
-  
-  {% if top_drivers %}
-  <table style="width:100%;background:white;border-radius:6px">
-    <thead>
-      <tr style="background:#f9f9f9">
-        <th style="padding:10px;text-align:left">Chauffeur</th>
-        <th style="padding:10px;text-align:center">Pleins</th>
-        <th style="padding:10px;text-align:right">Km parcourus</th>
-        <th style="padding:10px;text-align:right">Litres</th>
-        <th style="padding:10px;text-align:right">Coût (TND)</th>
-        <th style="padding:10px;text-align:right">Conso (L/100km)</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for driver in top_drivers %}
-        <tr style="border-bottom:1px solid #eee">
-          <td style="padding:10px;font-weight:600">
-            <a href="{{ url_for('driver_detail', did=driver.id) }}" style="color:#333;text-decoration:none">
-              {{ driver.name }}
-            </a>
-          </td>
-          <td style="padding:10px;text-align:center">{{ driver.num_entries }}</td>
-          <td style="padding:10px;text-align:right;font-weight:600;color:#0066cc">{{ driver.total_km }} km</td>
-          <td style="padding:10px;text-align:right">{{ driver.total_liters }} L</td>
-          <td style="padding:10px;text-align:right;font-weight:600;color:#e63946">{{ driver.total_cost }} TND</td>
-          <td style="padding:10px;text-align:right">
-            <span style="background:#f1f3f5;padding:4px 8px;border-radius:4px;font-size:13px">
-              {{ driver.avg_consumption }}
-            </span>
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div style="text-align:center;padding:20px;color:#999">
-    Aucune donnée disponible pour les 30 derniers jours
-  </div>
-  {% endif %}
+    <div class="card pink">
+        <h3>👤 Chauffeurs</h3>
+        <div class="value">{{ total_drivers }}</div>
+    </div>
+    <div class="card orange">
+        <h3>📝 Entrées</h3>
+        <div class="value">{{ total_entries }}</div>
+    </div>
+    <div class="card cyan">
+        <h3>💰 Coût Total</h3>
+        <div><span class="value">{{ totals.cost }}</span><span class="unit">TND</span></div>
+    </div>
 </div>
 
-<div style="margin-top:18px;border:1px solid #eee;border-radius:8px;padding:12px">
-  <div class="text-muted" style="margin-bottom:6px">Dernières entrées</div>
-  <table>
-    <thead>
-      <tr>
-        <th>Date</th><th>Véhicule</th><th>Chauffeur</th><th>Km</th><th>Litres</th><th>Type</th><th>Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in last_entries %}
-        <tr>
-          <td>{{ e.date }}</td>
-          <td>{{ e.vehicle.name if e.vehicle else '—' }}</td>
-          <td>{{ e.driver.name if e.driver else '—' }}</td>
-          <td>{{ e.odometer_km or '' }}</td>
-          <td>{{ e.liters or '' }}</td>
-          <td>{{ e.fuel_type.name if e.fuel_type else '—' }}</td>
-          <td>{{ e.total_cost or '' }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<!-- Actions rapides -->
+<div class="table-section" style="margin-top: 30px;">
+    <div class="table-title">🎯 Accès rapide</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <a href="{{ url_for('driver_reports') }}" class="btn btn-primary" style="text-decoration: none; justify-content: center;">📊 Rapports Chauffeur</a>
+        <a href="{{ url_for('vehicle_reports') }}" class="btn btn-primary" style="text-decoration: none; justify-content: center;">🚗 Rapports Véhicule</a>
+    </div>
 </div>
 
-<div style="margin-top:16px">
-  <a class="btn" href="{{ url_for('entries_list') }}">Voir les enregistrements</a>
-</div>
-
-<!-- Chart.js (CDN) -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  // Données envoyées par Flask
-  const labelsMonth = {{ labels_month|tojson }};
-  const litersMonth = {{ liters_month|tojson }};
-  const costMonth   = {{ cost_month|tojson }};
-  const fuelLabels  = {{ fuel_labels|tojson }};
-  const fuelLiters  = {{ fuel_liters|tojson }};
-
-  // Graphe mensuel (2 axes Y)
-  const ctxM = document.getElementById('monthlyChart').getContext('2d');
-  new Chart(ctxM, {
-    type: 'bar',
-    data: {
-      labels: labelsMonth,
-      datasets: [
-        { label: 'Litres', data: litersMonth, yAxisID: 'y' },
-        { label: 'Coût',   data: costMonth,   yAxisID: 'y1', type: 'line' }
-      ]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        y:  { beginAtZero: true, title: { display: true, text: 'Litres' } },
-        y1: { beginAtZero: true, position: 'right', title: { display: true, text: 'Coût' }, grid: { drawOnChartArea: false } }
-      }
-    }
-  });
-
-  // Répartition par carburant (camembert)
-  const ctxF = document.getElementById('fuelChart').getContext('2d');
-  new Chart(ctxF, {
-    type: 'doughnut',
-    data: {
-      labels: fuelLabels,
-      datasets: [{ data: fuelLiters }]
-    },
-    options: { responsive: true }
-  });
-</script>
 {% endblock %}
