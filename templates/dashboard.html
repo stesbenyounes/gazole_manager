@@ -1,90 +1,66 @@
-cat > /Users/ziedbenyounes/Downloads/gazole_manager/templates/vehicle_reports.html << 'EOF'
 {% extends "base.html" %}
 
-{% block title %}Rapports par Véhicule - Gazole Manager{% endblock %}
+{% block title %}Dashboard - Gazole Manager{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1>🚗 Rapports par Véhicule</h1>
-    <p>Suivi de la consommation et des coûts par véhicule</p>
+    <h1>📈 Dashboard</h1>
+    <p>Vue d'ensemble de votre flotte et consommation</p>
 </div>
 
-<div class="filters-section">
-    <div class="filters-title">Filtrer les données</div>
-    <form method="GET">
-        <div class="filters-grid">
-            <div class="filter-group">
-                <label for="vehicle_id">Véhicule</label>
-                <select id="vehicle_id" name="vehicle_id">
-                    <option value="">Tous les véhicules</option>
-                    {% for v in vehicles %}
-                        <option value="{{ v.id }}" {% if vehicle_id == v.id %}selected{% endif %}>{{ v.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="date_start">Date début</label>
-                <input type="date" id="date_start" name="date_start" value="{{ date_start or '' }}">
-            </div>
-            <div class="filter-group">
-                <label for="date_end">Date fin</label>
-                <input type="date" id="date_end" name="date_end" value="{{ date_end or '' }}">
-            </div>
-        </div>
-
-        <div class="filter-buttons">
-            <button type="submit" class="btn btn-primary">Filtrer</button>
-            <button type="button" class="btn btn-secondary" onclick="window.location.href='{{ url_for('vehicle_reports') }}'">Réinitialiser</button>
-            {% if report_data %}
-                <a href="{{ url_for('vehicle_reports', vehicle_id=vehicle_id, date_start=date_start, date_end=date_end, export=1) }}" class="btn btn-export">Exporter CSV</a>
-            {% endif %}
-        </div>
-    </form>
+<!-- Cartes principales -->
+<div class="summary-cards">
+    <div class="card blue">
+        <h3>Véhicules</h3>
+        <div class="value">{{ total_vehicles }}</div>
+    </div>
+    <div class="card pink">
+        <h3>Chauffeurs</h3>
+        <div class="value">{{ total_drivers }}</div>
+    </div>
+    <div class="card orange">
+        <h3>Entrées</h3>
+        <div class="value">{{ total_entries }}</div>
+    </div>
+    <div class="card green">
+        <h3>Coût Total</h3>
+        <div class="value">{{ totals.cost }}<span class="unit">TND</span></div>
+    </div>
 </div>
 
+<!-- Cartes secondaires -->
 <div class="summary-cards">
     <div class="card blue">
         <h3>Total Litres</h3>
-        <div class="value">{{ total_liters }}<span class="unit">L</span></div>
-    </div>
-    <div class="card pink">
-        <h3>Coût Total</h3>
-        <div class="value">{{ total_cost }}<span class="unit">TND</span></div>
-    </div>
-    <div class="card orange">
-        <h3>Distance</h3>
-        <div class="value">{{ total_km }}<span class="unit">km</span></div>
+        <div class="value">{{ totals.liters }}<span class="unit">L</span></div>
     </div>
     <div class="card green">
-        <h3>Consommation</h3>
-        <div class="value">{{ avg_consumption }}<span class="unit">L/100km</span></div>
+        <h3>Consommation Moyenne</h3>
+        <div class="value">{{ avg_l_per_100 }}<span class="unit">L/100km</span></div>
     </div>
 </div>
 
+<!-- Dernières Entrées -->
 <div class="table-section">
-    <div class="table-title">Détails par Véhicule</div>
-    {% if report_data %}
+    <div class="table-title">📋 Dernières Entrées</div>
+    {% if last_entries %}
     <table>
         <thead>
             <tr>
-                <th>Véhicule</th>
                 <th>Date</th>
                 <th>Chauffeur</th>
-                <th>Odomètre</th>
-                <th>Distance</th>
+                <th>Véhicule</th>
                 <th>Litres</th>
                 <th>Coût</th>
                 <th>Station</th>
             </tr>
         </thead>
         <tbody>
-            {% for entry in report_data %}
+            {% for entry in last_entries %}
             <tr>
-                <td><strong>{{ entry.vehicle.name if entry.vehicle else '—' }}</strong></td>
                 <td>{{ entry.date.strftime('%d/%m/%Y') if entry.date else '—' }}</td>
                 <td>{{ entry.driver.name if entry.driver else '—' }}</td>
-                <td>{{ entry.odometer_km|round(0) if entry.odometer_km else '—' }}</td>
-                <td>{{ distances.get(entry.id, '—') }}</td>
+                <td>{{ entry.vehicle.name if entry.vehicle else '—' }}</td>
                 <td class="value-positive">{{ entry.liters|round(2) if entry.liters else '—' }}</td>
                 <td>{{ entry.total_cost|round(3) if entry.total_cost else '—' }}</td>
                 <td>{{ entry.station or '—' }}</td>
@@ -94,11 +70,20 @@ cat > /Users/ziedbenyounes/Downloads/gazole_manager/templates/vehicle_reports.ht
     </table>
     {% else %}
     <div class="no-data">
-        <div class="no-data-icon">📭</div>
-        <p>Aucune donnée trouvée</p>
+        <p>Aucune entrée enregistrée</p>
     </div>
     {% endif %}
 </div>
 
+<!-- Accès rapide -->
+<div class="table-section" style="margin-top: 30px;">
+    <div class="table-title">🎯 Accès Rapide</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+        <a href="{{ url_for('driver_reports') }}" class="btn btn-primary" style="text-decoration: none; justify-content: center;">📊 Rapports Chauffeur</a>
+        <a href="{{ url_for('vehicle_reports') }}" class="btn btn-primary" style="text-decoration: none; justify-content: center;">🚗 Rapports Véhicule</a>
+        <a href="{{ url_for('import_csv') }}" class="btn btn-primary" style="text-decoration: none; justify-content: center;">📥 Importer CSV</a>
+        <a href="{{ url_for('export_csv') }}" class="btn btn-primary" style="text-decoration: none; justify-content: center;">📤 Exporter CSV</a>
+    </div>
+</div>
+
 {% endblock %}
-EOF
