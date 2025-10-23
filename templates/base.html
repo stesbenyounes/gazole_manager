@@ -62,6 +62,7 @@ cat > /Users/ziedbenyounes/Downloads/gazole_manager/templates/base.html << 'EOF'
             gap: 30px;
             flex: 1;
             margin-left: 50px;
+            align-items: center;
         }
 
         nav a {
@@ -74,6 +75,52 @@ cat > /Users/ziedbenyounes/Downloads/gazole_manager/templates/base.html << 'EOF'
 
         nav a:hover {
             color: var(--white);
+        }
+
+        .dropdown {
+            position: relative;
+        }
+
+        .dropdown-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: var(--white);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            min-width: 200px;
+            margin-top: 8px;
+            z-index: 1001;
+        }
+
+        .dropdown:hover .dropdown-menu {
+            display: block;
+        }
+
+        .dropdown-menu a {
+            display: block;
+            padding: 12px 16px;
+            color: var(--text);
+            text-decoration: none;
+            border-bottom: 1px solid var(--border);
+            transition: background-color 0.3s;
+        }
+
+        .dropdown-menu a:last-child {
+            border-bottom: none;
+        }
+
+        .dropdown-menu a:hover {
+            background-color: var(--light-bg);
+            color: var(--primary);
         }
 
         .user-menu {
@@ -378,6 +425,17 @@ cat > /Users/ziedbenyounes/Downloads/gazole_manager/templates/base.html << 'EOF'
                 <a href="/">Dashboard</a>
                 <a href="/driver-reports">Rapports Chauffeur</a>
                 <a href="/vehicle-reports">Rapports Véhicule</a>
+                
+                <div class="dropdown">
+                    <span class="dropdown-toggle">➕ Gestion</span>
+                    <div class="dropdown-menu">
+                        <a href="/entry/new">Ajouter Entrée</a>
+                        <a href="/vehicle/new">Ajouter Véhicule</a>
+                        <a href="/driver/new">Ajouter Chauffeur</a>
+                        <a href="/vehicles">Gérer Véhicules</a>
+                        <a href="/drivers">Gérer Chauffeurs</a>
+                    </div>
+                </div>
             </nav>
             <div class="user-menu">
                 <a href="/logout" class="logout-btn">Déconnexion</a>
