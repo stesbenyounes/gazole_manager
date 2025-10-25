@@ -40,6 +40,39 @@
     </div>
 </div>
 
+<!-- Top 5 Chauffeurs du Mois -->
+<div class="table-section">
+    <div class="table-title">🏆 Top 5 Chauffeurs (Mois en Cours)</div>
+    {% if top_drivers %}
+    <table>
+        <thead>
+            <tr>
+                <th>Rang</th>
+                <th>Chauffeur</th>
+                <th>KM</th>
+                <th>Consommation (L/100km)</th>
+                <th>Coût Total (TND)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rank, driver in top_drivers %}
+            <tr>
+                <td><strong>{{ rank }}</strong></td>
+                <td>{{ driver.name }}</td>
+                <td>{{ driver.km|int }}</td>
+                <td>{{ driver.consumption|round(2) }}</td>
+                <td>{{ driver.cost }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="no-data">
+        <p>Aucune donnée pour ce mois</p>
+    </div>
+    {% endif %}
+</div>
+
 <!-- Dernières Entrées -->
 <div class="table-section">
     <div class="table-title">📋 Dernières Entrées</div>

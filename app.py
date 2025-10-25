@@ -11,9 +11,9 @@ from sqlalchemy import text, func
 # ORM centralisé
 from extensions import db
 
-# -----------------------------------------------------------------------------
+# ================================================================================
 # App & DB
-# -----------------------------------------------------------------------------
+# ================================================================================
 app = Flask(__name__, instance_relative_config=True)
 
 # Assure le dossier instance/
@@ -51,9 +51,9 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# -----------------------------------------------------------------------------
+# ================================================================================
 # Routes d'authentification
-# -----------------------------------------------------------------------------
+# ================================================================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -74,9 +74,9 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# -----------------------------------------------------------------------------
+# ================================================================================
 # Helpers
-# -----------------------------------------------------------------------------
+# ================================================================================
 def ensure_column_exists(table: str, column: str, column_sql: str):
     """Ajoute la colonne si absente (compatible SQLite et PostgreSQL)."""
     # Vérifie si on utilise PostgreSQL ou SQLite
@@ -106,6 +106,7 @@ def ensure_fuel_types():
     db.session.commit()
 
 def per_entry_consumption(entries):
+    """Calcule la consommation L/100km pour chaque entrée."""
     entries_sorted = sorted(entries, key=lambda x: (x.vehicle_id, x.date, x.id))
     consos = {}
     last_odo = {}
@@ -123,21 +124,40 @@ def per_entry_consumption(entries):
     return consos
 
 def month_series_for(query):
-    rows = (
-        query.with_entities(
-            func.to_char(FuelEntry.date, 'YYYY-MM').label('ym'),
-            func.sum(FuelEntry.liters).label('liters'),
-            func.sum(FuelEntry.total_cost).label('cost'),
+    """Retourne les séries mensuelles (labels, liters, cost)."""
+    engine = db.engine
+    
+    # PostgreSQL: utiliser to_char
+    if engine.dialect.name == 'postgresql':
+        rows = (
+            query.with_entities(
+                func.to_char(FuelEntry.date, 'YYYY-MM').label('ym'),
+                func.sum(FuelEntry.liters).label('liters'),
+                func.sum(FuelEntry.total_cost).label('cost'),
+            )
+            .group_by('ym').order_by('ym')
+            .all()
         )
-        .group_by('ym').order_by('ym')
-        .all()
-    )
+    else:
+        # SQLite: utiliser strftime
+        rows = (
+            query.with_entities(
+                func.strftime('%Y-%m', FuelEntry.date).label('ym'),
+                func.sum(FuelEntry.liters).label('liters'),
+                func.sum(FuelEntry.total_cost).label('cost'),
+            )
+            .group_by(func.strftime('%Y-%m', FuelEntry.date))
+            .order_by(func.strftime('%Y-%m', FuelEntry.date))
+            .all()
+        )
+    
     labels = [r.ym or "—" for r in rows]
     liters = [float(r.liters or 0) for r in rows]
     cost   = [float(r.cost   or 0) for r in rows]
     return labels, liters, cost
 
 def stats_for_entries(entries, consos_map):
+    """Calcule les stats globales pour une liste d'entrées."""
     total_liters = round(sum((e.liters or 0) for e in entries), 2)
     total_cost   = round(sum((e.total_cost or 0) for e in entries), 3)
     consos_list  = [consos_map.get(e.id) for e in entries if consos_map.get(e.id) is not None]
@@ -151,6 +171,7 @@ MOIS_FR = {
 }
 
 def parse_month_to_range(s: str):
+    """Parse un mois en deux dates (start, end)."""
     if not s:
         return (None, None)
     s0 = s.strip().lower()
@@ -170,23 +191,30 @@ def parse_month_to_range(s: str):
     end = date(y+1,1,1) if m == 12 else date(y, m+1, 1)
     return (start, end)
 
-# -----------------------------------------------------------------------------
+# ================================================================================
 # Import des modèles
-# -----------------------------------------------------------------------------
+# ================================================================================
 with app.app_context():
     from models import Vehicle, Driver, FuelEntry, FuelType
     db.create_all()
     ensure_column_exists('fuel_entries', 'fuel_type_id', 'INTEGER')
     ensure_fuel_types()
 
-# -----------------------------------------------------------------------------
+# ================================================================================
 # Routes protégées (TOUTES avec @login_required)
-# -----------------------------------------------------------------------------
+# ================================================================================
 @app.route('/')
 @login_required
 def dashboard():
+    """
+    Dashboard principal avec:
+    - Cartes de statistiques globales
+    - Top 5 chauffeurs du mois en cours
+    - Dernières entrées
+    """
     from models import FuelEntry, Vehicle, Driver, FuelType
 
+    # Statistiques globales
     total_vehicles = Vehicle.query.count()
     total_drivers  = Driver.query.count()
     total_entries  = FuelEntry.query.count()
@@ -195,124 +223,74 @@ def dashboard():
     total_liters = db.session.query(func.sum(FuelEntry.liters)).scalar() or 0.0
     totals = {"cost": round(total_cost, 2), "liters": round(total_liters, 2)}
 
-    monthly = (
-    db.session.query(
-        func.to_char(FuelEntry.date, 'YYYY-MM').label('ym'),
-        func.sum(FuelEntry.liters).label('liters'),
-        func.sum(FuelEntry.total_cost).label('cost'),
-    )
-    .group_by('ym')
-    .order_by('ym')
-    .all()
-)
+    # Données mensuelles pour graphique
+    engine = db.engine
+    if engine.dialect.name == 'postgresql':
+        monthly = (
+            db.session.query(
+                func.to_char(FuelEntry.date, 'YYYY-MM').label('ym'),
+                func.sum(FuelEntry.liters).label('liters'),
+                func.sum(FuelEntry.total_cost).label('cost'),
+            )
+            .group_by('ym')
+            .order_by('ym')
+            .all()
+        )
+    else:
+        # SQLite
+        monthly = (
+            db.session.query(
+                func.strftime('%Y-%m', FuelEntry.date).label('ym'),
+                func.sum(FuelEntry.liters).label('liters'),
+                func.sum(FuelEntry.total_cost).label('cost'),
+            )
+            .group_by(func.strftime('%Y-%m', FuelEntry.date))
+            .order_by(func.strftime('%Y-%m', FuelEntry.date))
+            .all()
+        )
     labels_month = [row.ym or "—" for row in monthly]
     liters_month = [float(row.liters or 0) for row in monthly]
     cost_month   = [float(row.cost   or 0) for row in monthly]
 
+    # Consommation par type de carburant
     by_fuel = (
         db.session.query(
             (FuelType.name).label('name'),
             func.sum(FuelEntry.liters).label('liters')
         )
         .outerjoin(FuelType, FuelEntry.fuel_type_id == FuelType.id)
-        .group_by(FuelType.name)
-        .order_by(FuelType.name)
+        .group_by(FuelType.id)
         .all()
     )
-    fuel_labels = [row.name or "—" for row in by_fuel]
+    fuel_labels = [row.name or "Inconnu" for row in by_fuel]
     fuel_liters = [float(row.liters or 0) for row in by_fuel]
 
-    last_entries = (
-        FuelEntry.query
-        .order_by(FuelEntry.date.desc(), FuelEntry.id.desc())
-        .limit(5)
-        .all()
-    )
+    # Moyennes globales
+    all_entries = FuelEntry.query.all()
+    consos = per_entry_consumption(all_entries)
+    consos_list = [consos.get(e.id) for e in all_entries if consos.get(e.id) is not None]
+    avg_l_per_100 = round(sum(consos_list) / len(consos_list), 2) if consos_list else 0.0
 
-    consos = per_entry_consumption(FuelEntry.query.order_by(FuelEntry.date.asc(), FuelEntry.id.asc()).all())
-    avg_l_per_100 = round(sum(consos.values())/len(consos), 2) if consos else 0.0
+    # Dernières 10 entrées
+    last_entries = FuelEntry.query.order_by(FuelEntry.date.desc()).limit(10).all()
 
-    period = request.args.get('period', '30')
-    
-    if period == 'all':
-        start_date = None
-        period_value = 'all'
-    else:
-        try:
-            days = int(period)
-            start_date = date.today() - timedelta(days=days)
-            period_value = days
-        except:
-            start_date = date.today() - timedelta(days=30)
-            period_value = 30
-
-    query = db.session.query(
-        Driver.id,
-        Driver.name,
-        func.sum(FuelEntry.total_cost).label('total_cost'),
-        func.sum(FuelEntry.liters).label('total_liters'),
-        func.count(FuelEntry.id).label('num_entries')
-    ).join(FuelEntry, FuelEntry.driver_id == Driver.id)
-    
-    if start_date:
-        query = query.filter(FuelEntry.date >= start_date)
-    
-    driver_stats = query.group_by(Driver.id, Driver.name).all()
-
-    top_drivers = []
-    for stat in driver_stats:
-        driver_query = FuelEntry.query.filter(FuelEntry.driver_id == stat.id)
-        if start_date:
-            driver_query = driver_query.filter(FuelEntry.date >= start_date)
-        
-        driver_entries = driver_query.order_by(FuelEntry.date.asc()).all()
-        
-        total_km = 0
-        entries_by_vehicle = {}
-        for e in driver_entries:
-            vid = e.vehicle_id
-            if vid not in entries_by_vehicle:
-                entries_by_vehicle[vid] = []
-            entries_by_vehicle[vid].append(e)
-        
-        for vid, entries in entries_by_vehicle.items():
-            sorted_entries = sorted(entries, key=lambda x: x.date)
-            for i in range(1, len(sorted_entries)):
-                prev_odo = sorted_entries[i-1].odometer_km
-                curr_odo = sorted_entries[i].odometer_km
-                if prev_odo and curr_odo and curr_odo > prev_odo:
-                    total_km += curr_odo - prev_odo
-        
-        driver_consos = per_entry_consumption(driver_entries)
-        consos_list = [driver_consos.get(e.id) for e in driver_entries if driver_consos.get(e.id) is not None]
-        avg_conso = round(sum(consos_list) / len(consos_list), 2) if consos_list else 0.0
-        
-        if total_km > 0:
-            top_drivers.append({
-                'id': stat.id,
-                'name': stat.name,
-                'total_cost': round(stat.total_cost, 2),
-                'total_liters': round(stat.total_liters, 2),
-                'num_entries': stat.num_entries,
-                'total_km': round(total_km, 0),
-                'avg_consumption': avg_conso
-            })
-    
-    top_drivers = sorted(top_drivers, key=lambda x: x['total_km'], reverse=True)[:5]
-    
-    # Top 5 chauffeurs du mois en cours
+    # ========================================================================
+    # TOP 5 CHAUFFEURS DU MOIS EN COURS
+    # ========================================================================
     current_month_start = date(date.today().year, date.today().month, 1)
     current_month_entries = FuelEntry.query.filter(FuelEntry.date >= current_month_start).all()
 
     driver_stats = {}
     entries_by_driver = {}
 
+    # Grouper les entrées par chauffeur
     for e in sorted(current_month_entries, key=lambda x: (x.driver_id, x.date)):
         did = e.driver_id
         if did not in entries_by_driver:
             entries_by_driver[did] = []
         entries_by_driver[did].append(e)
 
+    # Calculer les KM et consommation par chauffeur
     for did, entries in entries_by_driver.items():
         total_km = 0
         total_cost = 0
@@ -330,23 +308,33 @@ def dashboard():
             total_cost += entries[i].total_cost or 0
         
         avg_conso = sum(consos_list) / len(consos_list) if consos_list else 0
-        driver = Driver.query.get(did)
+        
+        # FIX SQLALCHEMY: Remplacer Driver.query.get() par db.session.get()
+        driver = db.session.get(Driver, did)
         
         if driver:
             driver_stats[did] = {
                 'name': driver.name,
                 'km': total_km,
-                'consumption': avg_conso,
-                'cost': total_cost
+                'consumption': round(avg_conso, 2),
+                'cost': round(total_cost, 2)
             }
 
+    # Trier et obtenir les Top 5
     top_drivers = sorted(driver_stats.items(), key=lambda x: x[1]['km'], reverse=True)[:5]
     top_drivers = [(i+1, data) for i, (_, data) in enumerate(top_drivers)]
-    return render_template('dashboard.html',
+
+    return render_template(
+        'dashboard.html',
         total_vehicles=total_vehicles,
         total_drivers=total_drivers,
         total_entries=total_entries,
         totals=totals,
+        labels_month=labels_month,
+        liters_month=liters_month,
+        cost_month=cost_month,
+        fuel_labels=fuel_labels,
+        fuel_liters=fuel_liters,
         last_entries=last_entries,
         avg_l_per_100=avg_l_per_100,
         top_drivers=top_drivers,
@@ -355,6 +343,9 @@ def dashboard():
 @app.route('/entries')
 @login_required
 def entries_list():
+    """Liste des entrées de carburant avec filtres."""
+    from models import Vehicle, Driver, FuelEntry
+    
     q_vehicle = request.args.get('vehicle', type=int)
     q_driver  = request.args.get('driver',  type=int)
     q_month   = request.args.get('month', type=str)
@@ -369,286 +360,309 @@ def entries_list():
         if start and end:
             query = query.filter(FuelEntry.date >= start, FuelEntry.date < end)
 
-    entries = query.order_by(FuelEntry.date.desc(), FuelEntry.id.desc()).all()
-    vehicles = Vehicle.query.order_by(Vehicle.name.asc()).all()
-    drivers = Driver.query.order_by(Driver.name.asc()).all()
-    consos = per_entry_consumption(entries)
-
-    total_liters = round(sum((e.liters or 0) for e in entries), 2)
-    total_cost   = round(sum((e.total_cost or 0) for e in entries), 3)
-    consos_list = [consos.get(e.id) for e in entries if consos.get(e.id) is not None]
-    avg_l_per_100_view = round(sum(consos_list)/len(consos_list), 2) if consos_list else 0.0
-
-    if request.args.get('export') == '1':
-        si = StringIO()
-        w = csv.writer(si)
-        w.writerow(['date','vehicle','driver','odometer_km','liters','fuel_type','price_unit','total_cost','station','notes'])
-        for e in entries:
-            w.writerow([
-                e.date.isoformat() if e.date else '',
-                e.vehicle.name if e.vehicle else '',
-                e.driver.name if e.driver else '',
-                e.odometer_km or '',
-                e.liters or '',
-                e.fuel_type.name if e.fuel_type else '',
-                e.price_unit or '',
-                e.total_cost or '',
-                e.station or '',
-                e.notes or '',
-            ])
-        return Response(si.getvalue(), mimetype='text/csv',
-                        headers={'Content-Disposition':'attachment; filename=entries_export.csv'})
+    entries = query.order_by(FuelEntry.date.desc()).all()
+    vehicles = Vehicle.query.all()
+    drivers = Driver.query.all()
+    consos = per_entry_consumption(query.order_by(FuelEntry.date.asc()).all())
 
     return render_template(
         'entries_list.html',
         entries=entries,
         vehicles=vehicles,
         drivers=drivers,
-        consos=consos,
         q_vehicle=q_vehicle,
         q_driver=q_driver,
         q_month=q_month,
-        total_liters=total_liters,
-        total_cost=total_cost,
-        avg_l_per_100_view=avg_l_per_100_view,
+        consos=consos
     )
 
-@app.route('/entry/new', methods=['GET', 'POST'])
+@app.route('/entries/add', methods=['GET', 'POST'])
 @login_required
-def entry_new():
-    from models import Vehicle, Driver, FuelType, FuelEntry
-    vehicles = Vehicle.query.order_by(Vehicle.name.asc()).all()
-    drivers = Driver.query.order_by(Driver.name.asc()).all()
-    fuel_types = FuelType.query.order_by(FuelType.name.asc()).all()
-
-    ret_vehicle = request.args.get('vehicle')
-    ret_driver  = request.args.get('driver')
-    ret_month   = request.args.get('month')
-
+def entry_add():
+    """Ajouter une nouvelle entrée de carburant."""
+    from models import Vehicle, Driver, FuelEntry, FuelType
+    
     if request.method == 'POST':
         date_str = request.form.get('date')
-        if not date_str:
-            dt = datetime.today().date()
-        else:
-            try:
-                dt = datetime.strptime(date_str, '%Y-%m-%d').date()
-            except ValueError:
-                dt = datetime.today().date()
+        vehicle_id = request.form.get('vehicle_id', type=int)
+        driver_id = request.form.get('driver_id', type=int)
+        odo = request.form.get('odometer_km', type=float)
+        liters = request.form.get('liters', type=float)
+        price = request.form.get('price_unit', type=float)
+        fuel_type_id = request.form.get('fuel_type_id', type=int)
+        station = request.form.get('station', '').strip()
+        notes = request.form.get('notes', '').strip()
 
-        vehicle_id = int(request.form.get('vehicle_id')) if request.form.get('vehicle_id') else None
-        driver_id  = int(request.form.get('driver_id')) if request.form.get('driver_id') else None
-        odometer_km = float(request.form.get('odometer_km')) if request.form.get('odometer_km') else None
-        liters      = float(request.form.get('liters')) if request.form.get('liters') else None
-        price_unit  = request.form.get('price_unit')
-        price_unit  = float(price_unit) if price_unit else None
-        station = request.form.get('station') or ''
-        notes   = request.form.get('notes') or ''
-        fuel_type_id = request.form.get('fuel_type_id')
-        fuel_type_id = int(fuel_type_id) if fuel_type_id else None
+        try:
+            dt = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else date.today()
+            e = FuelEntry(
+                date=dt, vehicle_id=vehicle_id, driver_id=driver_id,
+                odometer_km=odo, liters=liters, price_unit=price,
+                fuel_type_id=fuel_type_id, station=station, notes=notes
+            )
+            e.compute_total()
+            db.session.add(e)
+            db.session.commit()
+            flash("Entrée ajoutée!", "success")
+            return redirect(url_for('entries_list'))
+        except Exception as ex:
+            db.session.rollback()
+            flash(f"Erreur: {str(ex)}", "danger")
 
-        ft = FuelType.query.get(fuel_type_id) if fuel_type_id else None
-        if price_unit is None and ft:
-            price_unit = ft.price
+    vehicles = Vehicle.query.all()
+    drivers = Driver.query.all()
+    fuel_types = FuelType.query.all()
+    return render_template('entry_form.html', vehicles=vehicles, drivers=drivers, fuel_types=fuel_types)
 
-        entry = FuelEntry(
-            date=dt,
-            vehicle_id=vehicle_id,
-            driver_id=driver_id,
-            odometer_km=odometer_km,
-            liters=liters,
-            price_unit=price_unit,
-            station=station,
-            notes=notes,
-            fuel_type_id=fuel_type_id
-        )
-        entry.compute_total()
-        db.session.add(entry)
-        db.session.commit()
+@app.route('/entries/<int:eid>/edit', methods=['GET', 'POST'])
+@login_required
+def entry_edit(eid):
+    """Modifier une entrée."""
+    from models import FuelEntry, Vehicle, Driver, FuelType
+    
+    e = db.session.get(FuelEntry, eid)
+    if not e:
+        flash("Entrée non trouvée", "danger")
+        return redirect(url_for('entries_list'))
 
-        rv = request.form.get('ret_vehicle') or None
-        rd = request.form.get('ret_driver') or None
-        rm = request.form.get('ret_month') or None
-        return redirect(url_for('entries_list', vehicle=rv, driver=rd, month=rm))
+    if request.method == 'POST':
+        try:
+            e.date = datetime.strptime(request.form.get('date'), '%Y-%m-%d').date()
+            e.vehicle_id = request.form.get('vehicle_id', type=int)
+            e.driver_id = request.form.get('driver_id', type=int)
+            e.odometer_km = request.form.get('odometer_km', type=float)
+            e.liters = request.form.get('liters', type=float)
+            e.price_unit = request.form.get('price_unit', type=float)
+            e.fuel_type_id = request.form.get('fuel_type_id', type=int)
+            e.station = request.form.get('station', '').strip()
+            e.notes = request.form.get('notes', '').strip()
+            e.compute_total()
+            db.session.commit()
+            flash("Entrée modifiée!", "success")
+            return redirect(url_for('entries_list'))
+        except Exception as ex:
+            db.session.rollback()
+            flash(f"Erreur: {str(ex)}", "danger")
 
-    return render_template(
-        'entry_form.html',
-        vehicles=vehicles,
-        drivers=drivers,
-        fuel_types=fuel_types,
-        entry=None,
-        ret_vehicle=ret_vehicle,
-        ret_driver=ret_driver,
-        ret_month=ret_month
-    )
+    vehicles = Vehicle.query.all()
+    drivers = Driver.query.all()
+    fuel_types = FuelType.query.all()
+    return render_template('entry_form.html', entry=e, vehicles=vehicles, drivers=drivers, fuel_types=fuel_types)
 
-@app.route('/entry/delete/<int:eid>', methods=['POST'])
+@app.route('/entries/<int:eid>/delete', methods=['POST'])
 @login_required
 def entry_delete(eid):
+    """Supprimer une entrée."""
     from models import FuelEntry
-    e = FuelEntry.query.get_or_404(eid)
-    db.session.delete(e)
-    db.session.commit()
+    
+    e = db.session.get(FuelEntry, eid)
+    if e:
+        db.session.delete(e)
+        db.session.commit()
+        flash("Entrée supprimée!", "success")
+    return redirect(url_for('entries_list'))
 
-    v = request.args.get('vehicle') or None
-    d = request.args.get('driver') or None
-    m = request.args.get('month') or None
-    return redirect(url_for('entries_list', vehicle=v, driver=d, month=m))
-
+# Routes Véhicules
 @app.route('/vehicles')
 @login_required
 def vehicles_list():
+    """Liste des véhicules."""
     from models import Vehicle
-    vehicles = Vehicle.query.order_by(Vehicle.name.asc()).all()
+    vehicles = Vehicle.query.all()
     return render_template('vehicles_list.html', vehicles=vehicles)
 
-@app.route('/vehicle/<int:vid>')
+@app.route('/vehicles/add', methods=['GET', 'POST'])
+@login_required
+def vehicle_add():
+    """Ajouter un véhicule."""
+    from models import Vehicle
+    
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if name:
+            v = Vehicle(name=name)
+            db.session.add(v)
+            db.session.commit()
+            flash("Véhicule ajouté!", "success")
+            return redirect(url_for('vehicles_list'))
+        else:
+            flash("Le nom est requis", "danger")
+
+    return render_template('vehicle_form.html')
+
+@app.route('/vehicles/<int:vid>/edit', methods=['GET', 'POST'])
+@login_required
+def vehicle_edit(vid):
+    """Modifier un véhicule."""
+    from models import Vehicle
+    
+    v = db.session.get(Vehicle, vid)
+    if not v:
+        flash("Véhicule non trouvé", "danger")
+        return redirect(url_for('vehicles_list'))
+
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if name:
+            v.name = name
+            db.session.commit()
+            flash("Véhicule modifié!", "success")
+            return redirect(url_for('vehicles_list'))
+        else:
+            flash("Le nom est requis", "danger")
+
+    return render_template('vehicle_form.html', vehicle=v)
+
+@app.route('/vehicles/<int:vid>/delete', methods=['POST'])
+@login_required
+def vehicle_delete(vid):
+    """Supprimer un véhicule."""
+    from models import Vehicle
+    
+    v = db.session.get(Vehicle, vid)
+    if v:
+        db.session.delete(v)
+        db.session.commit()
+        flash("Véhicule supprimé!", "success")
+    return redirect(url_for('vehicles_list'))
+
+@app.route('/vehicles/<int:vid>')
 @login_required
 def vehicle_detail(vid):
+    """Détails d'un véhicule."""
     from models import Vehicle, FuelEntry
-    v = Vehicle.query.get_or_404(vid)
-    q = FuelEntry.query.filter(FuelEntry.vehicle_id == vid)
-    entries = q.order_by(FuelEntry.date.desc(), FuelEntry.id.desc()).limit(50).all()
-    consos = per_entry_consumption(q.order_by(FuelEntry.date.asc(), FuelEntry.id.asc()).all())
+    
+    v = db.session.get(Vehicle, vid)
+    if not v:
+        flash("Véhicule non trouvé", "danger")
+        return redirect(url_for('vehicles_list'))
+
+    entries = FuelEntry.query.filter_by(vehicle_id=vid).order_by(FuelEntry.date.desc()).all()
+    consos = per_entry_consumption(FuelEntry.query.filter_by(vehicle_id=vid).order_by(FuelEntry.date.asc()).all())
     total_liters, total_cost, avg_l_100 = stats_for_entries(entries, consos)
-    labels, liters_month, cost_month = month_series_for(q)
-    last_entries = q.order_by(FuelEntry.date.desc(), FuelEntry.id.desc()).limit(10).all()
 
     return render_template(
         'vehicle_detail.html',
-        v=v,
+        vehicle=v,
         entries=entries,
-        last_entries=last_entries,
         consos=consos,
         total_liters=total_liters,
         total_cost=total_cost,
-        avg_l_100=avg_l_100,
-        labels=labels,
-        liters_month=liters_month,
-        cost_month=cost_month,
+        avg_l_100=avg_l_100
     )
 
-@app.route('/vehicle/new', methods=['GET', 'POST'])
-@login_required
-def vehicle_new():
-    from models import Vehicle
-    if request.method == 'POST':
-        name = (request.form.get('name') or '').strip()
-        plate = (request.form.get('plate') or '').strip()
-        plate = plate or None
-        if name:
-            db.session.add(Vehicle(name=name, plate=plate))
-            db.session.commit()
-        return redirect(url_for('vehicles_list'))
-    return render_template('vehicle_form.html')
-
-@app.route('/vehicle/edit/<int:vid>', methods=['GET', 'POST'])
-@login_required
-def vehicle_edit(vid):
-    from models import Vehicle
-    v = Vehicle.query.get_or_404(vid)
-    if request.method == 'POST':
-        v.name = (request.form.get('name') or '').strip()
-        plate = (request.form.get('plate') or '').strip()
-        v.plate = plate or None
-        db.session.commit()
-        return redirect(url_for('vehicles_list'))
-    return render_template('vehicle_form.html', vehicle=v)
-
-@app.route('/vehicle/delete/<int:vid>', methods=['POST'])
-@login_required
-def vehicle_delete(vid):
-    from models import Vehicle
-    v = Vehicle.query.get_or_404(vid)
-    db.session.delete(v)
-    db.session.commit()
-    return redirect(url_for('vehicles_list'))
-
+# Routes Chauffeurs
 @app.route('/drivers')
 @login_required
 def drivers_list():
+    """Liste des chauffeurs."""
     from models import Driver
-    drivers = Driver.query.order_by(Driver.name.asc()).all()
+    drivers = Driver.query.all()
     return render_template('drivers_list.html', drivers=drivers)
 
-@app.route('/driver/<int:did>')
+@app.route('/drivers/add', methods=['GET', 'POST'])
+@login_required
+def driver_add():
+    """Ajouter un chauffeur."""
+    from models import Driver
+    
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if name:
+            d = Driver(name=name)
+            db.session.add(d)
+            db.session.commit()
+            flash("Chauffeur ajouté!", "success")
+            return redirect(url_for('drivers_list'))
+        else:
+            flash("Le nom est requis", "danger")
+
+    return render_template('driver_form.html')
+
+@app.route('/drivers/<int:did>/edit', methods=['GET', 'POST'])
+@login_required
+def driver_edit(did):
+    """Modifier un chauffeur."""
+    from models import Driver
+    
+    d = db.session.get(Driver, did)
+    if not d:
+        flash("Chauffeur non trouvé", "danger")
+        return redirect(url_for('drivers_list'))
+
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if name:
+            d.name = name
+            db.session.commit()
+            flash("Chauffeur modifié!", "success")
+            return redirect(url_for('drivers_list'))
+        else:
+            flash("Le nom est requis", "danger")
+
+    return render_template('driver_form.html', driver=d)
+
+@app.route('/drivers/<int:did>/delete', methods=['POST'])
+@login_required
+def driver_delete(did):
+    """Supprimer un chauffeur."""
+    from models import Driver
+    
+    d = db.session.get(Driver, did)
+    if d:
+        db.session.delete(d)
+        db.session.commit()
+        flash("Chauffeur supprimé!", "success")
+    return redirect(url_for('drivers_list'))
+
+@app.route('/drivers/<int:did>')
 @login_required
 def driver_detail(did):
+    """Détails d'un chauffeur."""
     from models import Driver, FuelEntry
-    d = Driver.query.get_or_404(did)
-    q = FuelEntry.query.filter(FuelEntry.driver_id == did)
-    entries = q.order_by(FuelEntry.date.desc(), FuelEntry.id.desc()).limit(50).all()
-    consos = per_entry_consumption(q.order_by(FuelEntry.date.asc(), FuelEntry.id.asc()).all())
+    
+    d = db.session.get(Driver, did)
+    if not d:
+        flash("Chauffeur non trouvé", "danger")
+        return redirect(url_for('drivers_list'))
+
+    entries = FuelEntry.query.filter_by(driver_id=did).order_by(FuelEntry.date.desc()).all()
+    consos = per_entry_consumption(FuelEntry.query.filter_by(driver_id=did).order_by(FuelEntry.date.asc()).all())
     total_liters, total_cost, avg_l_100 = stats_for_entries(entries, consos)
-    labels, liters_month, cost_month = month_series_for(q)
-    last_entries = q.order_by(FuelEntry.date.desc(), FuelEntry.id.desc()).limit(10).all()
 
     return render_template(
         'driver_detail.html',
-        d=d,
+        driver=d,
         entries=entries,
-        last_entries=last_entries,
         consos=consos,
         total_liters=total_liters,
         total_cost=total_cost,
-        avg_l_100=avg_l_100,
-        labels=labels,
-        liters_month=liters_month,
-        cost_month=cost_month,
+        avg_l_100=avg_l_100
     )
-
-@app.route('/driver/new', methods=['GET', 'POST'])
-@login_required
-def driver_new():
-    from models import Driver
-    if request.method == 'POST':
-        name = (request.form.get('name') or '').strip()
-        if name:
-            db.session.add(Driver(name=name))
-            db.session.commit()
-        return redirect(url_for('drivers_list'))
-    return render_template('driver_form.html')
-
-@app.route('/driver/edit/<int:did>', methods=['GET', 'POST'])
-@login_required
-def driver_edit(did):
-    from models import Driver
-    d = Driver.query.get_or_404(did)
-    if request.method == 'POST':
-        d.name = (request.form.get('name') or '').strip()
-        db.session.commit()
-        return redirect(url_for('drivers_list'))
-    return render_template('driver_form.html', driver=d)
-
-@app.route('/driver/delete/<int:did>', methods=['POST'])
-@login_required
-def driver_delete(did):
-    from models import Driver
-    d = Driver.query.get_or_404(did)
-    db.session.delete(d)
-    db.session.commit()
-    return redirect(url_for('drivers_list'))
 
 @app.route('/driver-reports')
 @login_required
 def driver_reports():
-    from models import Driver, FuelEntry, Vehicle
+    """Rapports par chauffeur."""
+    from models import Driver, FuelEntry
+    
     driver_id = request.args.get('driver_id', type=int)
-    vehicle_id = request.args.get('vehicle_id', type=int)
     date_start = request.args.get('date_start', type=str)
     date_end = request.args.get('date_end', type=str)
     export = request.args.get('export', type=int)
     
     query = FuelEntry.query
+    
     if driver_id:
         query = query.filter(FuelEntry.driver_id == driver_id)
-    if vehicle_id:
-        query = query.filter(FuelEntry.vehicle_id == vehicle_id)
+    
     if date_start:
         try:
             start_date = datetime.strptime(date_start, '%Y-%m-%d').date()
             query = query.filter(FuelEntry.date >= start_date)
         except ValueError:
             pass
+    
     if date_end:
         try:
             end_date = datetime.strptime(date_end, '%Y-%m-%d').date()
@@ -657,73 +671,54 @@ def driver_reports():
             pass
     
     report_data = query.order_by(FuelEntry.date.desc()).all()
+    
+    # Calculs
     total_liters = round(sum((e.liters or 0) for e in report_data), 2)
     total_cost = round(sum((e.total_cost or 0) for e in report_data), 3)
     
-    distances = {}
-    total_km = 0
-    entries_by_vehicle = {}
-    for e in sorted(report_data, key=lambda x: (x.vehicle_id, x.date)):
-        vid = e.vehicle_id
-        if vid not in entries_by_vehicle:
-            entries_by_vehicle[vid] = []
-        entries_by_vehicle[vid].append(e)
-    
-    for vid, entries in entries_by_vehicle.items():
-        for i in range(1, len(entries)):
-            prev_odo = entries[i-1].odometer_km
-            curr_odo = entries[i].odometer_km
-            if prev_odo and curr_odo and curr_odo > prev_odo:
-                distance = curr_odo - prev_odo
-                distances[entries[i].id] = round(distance, 0)
-                total_km += distance
-    
-    total_km = round(total_km, 0)
     consos = per_entry_consumption(query.order_by(FuelEntry.date.asc()).all())
     consos_list = [consos.get(e.id) for e in report_data if consos.get(e.id) is not None]
     avg_consumption = round(sum(consos_list) / len(consos_list), 2) if consos_list else 0.0
     
+    # Export CSV
     if export == 1:
         si = StringIO()
         w = csv.writer(si)
-        w.writerow(['chauffeur', 'date', 'vehicule', 'odometre_km', 'distance_km', 'litres', 'cout_total', 'consommation_l100km', 'station'])
+        w.writerow(['chauffeur', 'date', 'vehicule', 'odometre_km', 'litres', 'cout_total', 'consommation_l100km', 'station'])
         for e in report_data:
             w.writerow([
                 e.driver.name if e.driver else '',
                 e.date.isoformat() if e.date else '',
                 e.vehicle.name if e.vehicle else '',
                 e.odometer_km or '',
-                distances.get(e.id, ''),
                 e.liters or '',
                 e.total_cost or '',
                 consos.get(e.id, ''),
                 e.station or '',
             ])
         return Response(si.getvalue(), mimetype='text/csv',
-            headers={'Content-Disposition': 'attachment; filename=rapport_chauffeurs.csv'})
+                       headers={'Content-Disposition': 'attachment; filename=rapport_chauffeurs.csv'})
     
     drivers = Driver.query.order_by(Driver.name.asc()).all()
-    vehicles = Vehicle.query.order_by(Vehicle.name.asc()).all()
     
     return render_template(
         'driver_reports.html',
         drivers=drivers,
-        vehicles=vehicles,
         driver_id=driver_id,
-        vehicle_id=vehicle_id,
         date_start=date_start,
         date_end=date_end,
         report_data=report_data,
         total_liters=total_liters,
         total_cost=total_cost,
-        total_km=total_km,
         avg_consumption=avg_consumption,
-        consos=consos,
-        distances=distances
+        consos=consos
     )
-@app.route('/vehicle-reports') 
+
+@app.route('/vehicle-reports')
+@login_required
 def vehicle_reports():
-    from models import Vehicle, FuelEntry, Driver
+    """Rapports par véhicule."""
+    from models import Vehicle, FuelEntry
     
     vehicle_id = request.args.get('vehicle_id', type=int)
     date_start = request.args.get('date_start', type=str)
@@ -818,9 +813,11 @@ def vehicle_reports():
         consos=consos,
         distances=distances
     )
+
 @app.route('/import-csv', methods=['GET', 'POST'])
 @login_required
 def import_csv():
+    """Import de données depuis un fichier CSV."""
     from models import Vehicle, Driver, FuelEntry, FuelType
     if request.method == 'POST':
         f = request.files.get('file')
@@ -898,6 +895,7 @@ def import_csv():
 @app.route('/export-csv')
 @login_required
 def export_csv():
+    """Export de toutes les données en CSV."""
     from models import FuelEntry, FuelType
     headers = [
         'date','vehicle','driver','odometer_km','liters',
@@ -932,11 +930,12 @@ def export_csv():
 
 @app.route('/health')
 def health():
+    """Health check pour Render."""
     return "OK"
 
-# -----------------------------------------------------------------------------
+# ================================================================================
 # Main
-# -----------------------------------------------------------------------------
+# ================================================================================
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     app.run(host='0.0.0.0', port=port)
